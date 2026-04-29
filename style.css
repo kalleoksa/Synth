@@ -1,0 +1,208 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: monospace;
+  background: #1a1a1a;
+  color: #ccc;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Toolbar ---- */
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 11px;
+  color: #888;
+  border-bottom: 0.5px solid #333;
+  flex-wrap: wrap;
+  background: #111;
+  flex-shrink: 0;
+}
+
+.tb-btn {
+  padding: 3px 9px;
+  border: 0.5px solid #444;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  color: #aaa;
+  cursor: pointer;
+}
+.tb-btn:hover { background: #222; }
+
+#status { font-size: 10px; color: #555; margin-left: auto; }
+
+/* ---- Canvas ---- */
+#canvas-wrap {
+  position: relative;
+  flex: 1;
+  background: #161616;
+  overflow: hidden;
+}
+
+#svg-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ---- Modules ---- */
+.module {
+  position: absolute;
+  background: #1e1e1e;
+  border: 0.5px solid #333;
+  border-radius: 8px;
+  padding: 10px;
+  min-width: 130px;
+  z-index: 2;
+  cursor: grab;
+  user-select: none;
+}
+.module:active { cursor: grabbing; }
+.module.dragging { z-index: 10; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+.module.output-mod { border-color: #3B6D11; }
+.module.arp-mod { border-color: #8E44AD; }
+
+.mod-title {
+  font-size: 10px;
+  color: #555;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 0.5px solid #2a2a2a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mod-on {
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #888;
+  cursor: pointer;
+}
+
+.mod-knob {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+.mod-knob label { font-size: 10px; color: #666; }
+.mod-knob input[type=range] { width: 100%; accent-color: #378ADD; }
+.mod-knob span { font-size: 11px; font-weight: 500; color: #ccc; }
+
+/* ---- Wave buttons ---- */
+.wave-row {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+.wave-btn {
+  flex: 1;
+  padding: 3px 2px;
+  border: 0.5px solid #333;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 9px;
+  font-family: monospace;
+  color: #777;
+  cursor: pointer;
+}
+.wave-btn.active { background: #ccc; color: #111; }
+
+/* ---- Ports ---- */
+.ports {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 0.5px solid #2a2a2a;
+  gap: 4px;
+}
+.port-col { display: flex; flex-direction: column; gap: 6px; }
+.port-col.outputs { align-items: flex-end; margin-left: auto; }
+
+.port { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.port.output { flex-direction: row-reverse; }
+
+.port-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid #444;
+  background: #222;
+  flex-shrink: 0;
+  transition: background 0.1s;
+}
+.port-dot:hover { border-color: #378ADD; background: #1a3a5c; }
+.port-dot.connected { border-color: #378ADD; background: #378ADD; }
+.port-dot.pending { border-color: #BA7517; background: #FAC775; animation: blink 0.5s infinite alternate; }
+
+.port-label { font-size: 9px; color: #555; white-space: nowrap; }
+
+@keyframes blink { to { opacity: 0.3; } }
+
+/* ---- ARP sequence display ---- */
+.arp-seq {
+  font-size: 9px;
+  color: #8E44AD;
+  margin-top: 4px;
+  min-height: 12px;
+  word-break: break-all;
+}
+
+/* ---- Piano ---- */
+#piano-bar {
+  padding: 7px 10px 6px;
+  border-top: 0.5px solid #333;
+  background: #111;
+  flex-shrink: 0;
+}
+
+.piano {
+  display: flex;
+  gap: 1px;
+  height: 50px;
+  position: relative;
+}
+
+.wk {
+  flex: 1;
+  background: #ddd;
+  border: 0.5px solid #999;
+  border-radius: 0 0 3px 3px;
+  cursor: pointer;
+}
+.wk:hover { background: #eee; }
+.wk.on { background: #B5D4F4; }
+.wk.held { background: #FAC775; }
+
+.bks {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 31px;
+  pointer-events: none;
+}
+
+.bk {
+  pointer-events: all;
+  background: #222;
+  border-radius: 0 0 2px 2px;
+  cursor: pointer;
+  position: absolute;
+}
+.bk:hover { background: #333; }
+.bk.on { background: #185FA5; }
+.bk.held { background: #BA7517; }
+
+.kb-hint { font-size: 10px; color: #444; margin-top: 4px; }

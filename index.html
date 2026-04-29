@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modular Synth</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="toolbar">
+    <button class="tb-btn" onclick="addOsc()">+ OSC</button>
+    <button class="tb-btn" onclick="addFilter()">+ Filter</button>
+    <button class="tb-btn" onclick="addLfo()">+ LFO</button>
+    <button class="tb-btn" onclick="addArp()">+ ARP</button>
+    <button class="tb-btn" onclick="addOutput()">+ Output</button>
+    <button class="tb-btn" onclick="clearAllCables()">clear cables</button>
+    <span id="status">patch: click output → input</span>
+  </div>
+
+  <div id="canvas-wrap">
+    <svg id="svg-layer"></svg>
+  </div>
+
+  <div id="piano-bar">
+    <div class="piano" id="piano"></div>
+    <div class="kb-hint">A W S E D F T G Y H U J K — C3 chromatic. hold keys for arp.</div>
+  </div>
+
+  <script src="synth.js"></script>
+</body>
+</html>
