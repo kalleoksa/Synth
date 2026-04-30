@@ -92,8 +92,7 @@ function onPortClick(e) {
   const dot = e.currentTarget;
   const { id, port, dir } = dot.dataset;
 
-  if (dot.classList.contains('connected') && dir === 'in') {
-    if (pending) { pending.dot.classList.remove('pending'); pending = null; }
+  if (dot.classList.contains('connected') && dir === 'in' && !pending) {
     removeCablesAtPort(id, port);
     return;
   }
