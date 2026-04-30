@@ -495,27 +495,153 @@ function getDotPos(id, port, dir) {
   return { x: r.left - wrap.left + r.width / 2, y: r.top - wrap.top + r.height / 2 };
 }
 
+// ---- Envelope (VCA) module ----
+function addEnv(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+  const envGain = AC.createGain();
+  envGain.gain.value = 0;
+  const desc = {
+    type: 'env', envGain,
+    attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.3,
+    audioIn: envGain, audioOut: envGain,
+    modIn: null, rateModIn: null, modOut: null
+  };
+  spawnModule(id, desc, `
+    <div class="mod-title">Env (VCA)</div>
+    <canvas id="${id}-canvas" class="env-indicator" width="110" height="28"></canvas>
+    <div class="mod-knob"><label>attack</label>
+      <input type="range" min="0.001" max="2" value="0.01" step="0.001"
+        oninput="mods['${id}'].attack=+this.value;this.nextElementSibling.textContent=parseFloat(this.value).toFixed(3)+'s';drawEnvShape('${id}')">
+      <span>0.010s</span></div>
+    <div class="mod-knob"><label>decay</label>
+      <input type="range" min="0.001" max="2" value="0.1" step="0.001"
+        oninput="mods['${id}'].decay=+this.value;this.nextElementSibling.textContent=parseFloat(this.value).toFixed(3)+'s';drawEnvShape('${id}')">
+      <span>0.100s</span></div>
+    <div class="mod-knob"><label>sustain</label>
+      <input type="range" min="0" max="1" value="0.7" step="0.01"
+        oninput="mods['${id}'].sustain=+this.value;this.nextElementSibling.textContent=parseFloat(this.value).toFixed(2);drawEnvShape('${id}')">
+      <span>0.70</span></div>
+    <div class="mod-knob"><label>release</label>
+      <input type="range" min="0.001" max="3" value="0.3" step="0.001"
+        oninput="mods['${id}'].release=+this.value;this.nextElementSibling.textContent=parseFloat(this.value).toFixed(3)+'s';drawEnvShape('${id}')">
+      <span>0.300s</span></div>
+    <div class="ports">
+      <div class="port-col">${portH(id, 'in', 'in', 'in')}</div>
+      <div class="port-col outputs">${portH(id, 'out', 'out', 'out')}</div>
+    </div>`, x, y, 'env-mod');
+  setTimeout(() => drawEnvShape(id), 50);
+}
+
+function drawEnvShape(id) {
+  const m = mods[id]; if (!m) return;
+  const canvas = document.getElementById(id + '-canvas'); if (!canvas) return;
+  const W = canvas.offsetWidth || 110, H = 28;
+  canvas.width = W; canvas.height = H;
+  const c = canvas.getContext('2d');
+  c.clearRect(0, 0, W, H);
+  const total = m.attack + m.decay + 0.3 + m.release;
+  const ax = m.attack/total*W, dx = ax + m.decay/total*W;
+  const sx = dx + 0.3/total*W, ex = W;
+  c.strokeStyle = '#185FA5'; c.lineWidth = 1.5; c.beginPath();
+  c.moveTo(0, H); c.lineTo(ax, 2);
+  c.lineTo(dx, H - (m.sustain * (H - 4)) - 2);
+  c.lineTo(sx, H - (m.sustain * (H - 4)) - 2);
+  c.lineTo(ex, H);
+  c.stroke();
+}
+
+function envNoteOn(id) {
+  const m = mods[id]; if (!m) return;
+  const g = m.envGain.gain, t = AC.currentTime;
+  g.cancelScheduledValues(t);
+  g.setValueAtTime(g.value, t);
+  g.linearRampToValueAtTime(1, t + m.attack);
+  g.linearRampToValueAtTime(m.sustain, t + m.attack + m.decay);
+}
+
+function envNoteOff(id) {
+  const m = mods[id]; if (!m) return;
+  const g = m.envGain.gain, t = AC.currentTime;
+  g.cancelScheduledValues(t);
+  g.setValueAtTime(g.value, t);
+  g.linearRampToValueAtTime(0, t + m.release);
+}
+
+function triggerEnvOn()  { Object.entries(mods).forEach(([id, m]) => { if (m.type === 'env') envNoteOn(id);  }); }
+function triggerEnvOff() { Object.entries(mods).forEach(([id, m]) => { if (m.type === 'env') envNoteOff(id); }); }
+
+// ---- Drone module ----
+function addDrone(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+  const desc = {
+    type: 'drone', on: false, heldNotes: new Set(),
+    audioIn: null, audioOut: null, modIn: null, rateModIn: null, modOut: null
+  };
+  spawnModule(id, desc, `
+    <div class="mod-title">
+      <span>Drone</span>
+      <label class="mod-on"><input type="checkbox" onchange="toggleDrone('${id}',this.checked)"> on</label>
+    </div>
+    <div class="drone-notes" id="${id}-notes">—</div>
+    <div style="font-size:9px;color:#555;margin-top:4px;">hold notes → toggle off to release</div>
+  `, x, y, 'drone-mod');
+}
+
+function toggleDrone(id, on) {
+  const m = mods[id]; m.on = on;
+  if (!on) {
+    m.heldNotes.forEach(midi => highlightKey(midi, false));
+    triggerEnvOff();
+    m.heldNotes.clear();
+    document.getElementById(id + '-notes').textContent = '—';
+  }
+}
+
 // ---- Notes ----
 function noteOn(midi) {
   if (AC.state === 'suspended') AC.resume();
-  const hasArp = Object.values(mods).some(m => m.type === 'arp' && m.on);
-  if (hasArp) {
+
+  const droneActive = Object.values(mods).some(m => m.type === 'drone' && m.on);
+  if (droneActive) {
+    Object.entries(mods).forEach(([id, m]) => {
+      if (m.type !== 'drone' || !m.on || m.heldNotes.has(midi)) return;
+      m.heldNotes.add(midi);
+      Object.values(mods).forEach(mod => {
+        if (mod.type === 'osc') { mod.currentMidi = midi; mod.osc.frequency.value = midiToFreq(midi + (mod.octave || 0) * 12); }
+      });
+      triggerEnvOn();
+      highlightKey(midi, true, 'held');
+      document.getElementById(id + '-notes').textContent = Array.from(m.heldNotes).map(noteName).join(' ');
+    });
+    return;
+  }
+
+  const arpActive = Object.values(mods).some(m => m.type === 'arp' && m.on);
+  if (arpActive) {
     Object.values(mods).forEach(m => { if (m.type === 'arp') { m.heldKeys.add(midi); highlightKey(midi, true, 'held'); } });
     return;
   }
+
   Object.values(mods).forEach(m => {
     if (m.type === 'osc') { m.currentMidi = midi; m.osc.frequency.value = midiToFreq(midi + (m.octave || 0) * 12); }
   });
+  triggerEnvOn();
   highlightKey(midi, true, 'on');
 }
 
 function noteOff(midi) {
-  const hasArp = Object.values(mods).some(m => m.type === 'arp' && m.on);
-  if (hasArp) {
+  if (Object.values(mods).some(m => m.type === 'drone' && m.on)) return;
+
+  const arpActive = Object.values(mods).some(m => m.type === 'arp' && m.on);
+  if (arpActive) {
     Object.values(mods).forEach(m => { if (m.type === 'arp') m.heldKeys.delete(midi); });
     highlightKey(midi, false);
     return;
   }
+
+  triggerEnvOff();
   highlightKey(midi, false);
 }
 
@@ -576,6 +702,8 @@ buildPiano();
 addOsc(20, 20);
 addOsc(170, 20);
 addFilter(320, 20);
-addOutput(470, 20);
+addEnv(470, 20);
+addOutput(630, 20);
 addLfo(20, 290);
 addArp(170, 290);
+addDrone(400, 310);

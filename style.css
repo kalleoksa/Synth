@@ -67,7 +67,24 @@ body {
 .module:active { cursor: grabbing; }
 .module.dragging { z-index: 10; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
 .module.output-mod { border-color: #3B6D11; }
-.module.arp-mod { border-color: #8E44AD; }
+.module.arp-mod    { border-color: #8E44AD; }
+.module.env-mod    { border-color: #185FA5; }
+.module.drone-mod  { border-color: #BA7517; }
+
+.env-indicator {
+  height: 28px;
+  margin-bottom: 6px;
+  background: #111;
+  border-radius: 3px;
+  width: 100%;
+}
+
+.drone-notes {
+  font-size: 9px;
+  color: #BA7517;
+  margin-top: 4px;
+  min-height: 12px;
+}
 
 .mod-title {
   font-size: 10px;
