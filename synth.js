@@ -56,28 +56,61 @@ function disconnectPair(fromId, fromPort, toId, toPort) {
 }
 
 // ---- Port click handling ----
+function removeCablesAtPort(id, port) {
+  const toRemove = cables.filter(c =>
+    (c.fromId === id && c.fromPort === port) ||
+    (c.toId   === id && c.toPort   === port)
+  );
+
+  toRemove.forEach(c => {
+    disconnectPair(c.fromId, c.fromPort, c.toId, c.toPort);
+    cables.splice(cables.indexOf(c), 1);
+  });
+
+  toRemove.forEach(c => {
+    refreshDotState(c.fromId, c.fromPort, 'out');
+    refreshDotState(c.toId,   c.toPort,   'in');
+  });
+
+  redrawCables();
+}
+
+function refreshDotState(id, port, dir) {
+  const m = mods[id]; if (!m) return;
+  const dot = m.el.querySelector(`.port-dot[data-port="${port}"][data-dir="${dir}"]`);
+  if (!dot) return;
+
+  const stillConnected = cables.some(c =>
+    (c.fromId === id && c.fromPort === port) ||
+    (c.toId   === id && c.toPort   === port)
+  );
+  dot.classList.toggle('connected', stillConnected);
+}
+
 function onPortClick(e) {
   e.stopPropagation();
   const dot = e.currentTarget;
   const { id, port, dir } = dot.dataset;
 
-  if (!pending) {
-    if (dir !== 'out') { setStatus('click an output port first (right side)'); return; }
-    pending = { id, port, dot };
-    dot.classList.add('pending');
-    setStatus('now click an input port…');
+  if (dot.classList.contains('connected')) {
+    if (pending) { pending.dot.classList.remove('pending'); pending = null; }
+    removeCablesAtPort(id, port);
     return;
   }
 
-  // cancel on same dot
+  if (!pending) {
+    if (dir !== 'out') return;
+    pending = { id, port, dot };
+    dot.classList.add('pending');
+    return;
+  }
+
   if (pending.dot === dot) {
     dot.classList.remove('pending');
     pending = null;
-    setStatus('cancelled');
     return;
   }
 
-  // switch source if another output clicked
   if (dir === 'out') {
     pending.dot.classList.remove('pending');
     pending = { id, port, dot };
@@ -85,7 +118,6 @@ function onPortClick(e) {
     return;
   }
 
-  // complete cable
   const color = COLORS[colorIdx++ % COLORS.length];
   cables.push({ fromId: pending.id, fromPort: pending.port, toId: id, toPort: port, color });
   connectPair(pending.id, pending.port, id, port);
@@ -93,7 +125,6 @@ function onPortClick(e) {
   [pending.dot, dot].forEach(d => d.classList.add('connected'));
   pending = null;
   redrawCables();
-  setStatus('patched ✓  click an output to start another cable');
 }
 
 function clearAllCables() {
