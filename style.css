@@ -163,7 +163,7 @@ body {
 }
 .port-dot:hover { border-color: #378ADD; background: #1a3a5c; }
 .port-dot.connected { border-color: #378ADD; background: #378ADD; }
-.port-dot.connected:hover {
+.port:not(.output) .port-dot.connected:hover {
   border-color: #D85A30;
   background: #5a1a0a;
 }
