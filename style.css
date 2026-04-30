@@ -43,6 +43,14 @@ body {
   flex: 1;
   background: #161616;
   overflow: hidden;
+  touch-action: none;
+}
+
+#canvas-content {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
 #svg-layer {
@@ -50,6 +58,7 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 1;
+  overflow: visible;
 }
 
 /* ---- Modules ---- */
@@ -63,9 +72,19 @@ body {
   z-index: 2;
   cursor: grab;
   user-select: none;
+  touch-action: none;
 }
 .module:active { cursor: grabbing; }
 .module.dragging { z-index: 10; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+.module.long-press {
+  border-color: #D85A30 !important;
+  box-shadow: 0 0 0 2px rgba(216, 90, 48, 0.4);
+  animation: lp-pulse 0.6s ease-out;
+}
+@keyframes lp-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(216, 90, 48, 0.5); }
+  100% { box-shadow: 0 0 0 8px rgba(216, 90, 48, 0); }
+}
 .module.output-mod { border-color: #3B6D11; }
 .module.arp-mod    { border-color: #8E44AD; }
 .module.env-mod    { border-color: #185FA5; }
@@ -227,3 +246,66 @@ body {
 .bk.held { background: #BA7517; }
 
 .kb-hint { font-size: 10px; color: #444; margin-top: 4px; }
+
+/* ---- Rotate hint (portrait only) ---- */
+#rotate-hint {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: #0d0d0d;
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  font-size: 14px;
+  text-align: center;
+}
+.rotate-inner { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.rotate-icon {
+  font-size: 56px;
+  color: #BA7517;
+  animation: rot 2s infinite ease-in-out;
+}
+@keyframes rot {
+  0%, 100% { transform: rotate(-30deg); }
+  50%      { transform: rotate(60deg); }
+}
+@media (orientation: portrait) and (max-width: 900px) {
+  #rotate-hint { display: flex; }
+}
+
+/* ---- Touch / coarse pointer overrides ---- */
+@media (pointer: coarse) {
+  .port-dot {
+    width: 18px;
+    height: 18px;
+    border-width: 2px;
+  }
+  .port { padding: 4px 0; }
+  .port-label { font-size: 10px; }
+
+  .tb-btn {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+
+  .mod-knob input[type=range] {
+    height: 28px;
+  }
+  .mod-knob span { font-size: 12px; }
+
+  .module { min-width: 150px; padding: 12px; }
+
+  .wave-btn { padding: 6px 4px; font-size: 10px; }
+
+  .mod-on { padding: 4px 0; }
+  .mod-on input[type=checkbox] { width: 18px; height: 18px; }
+}
+
+/* keep piano keys easy to tap */
+.piano { min-height: 56px; }
+@media (pointer: coarse) {
+  #piano-bar { padding: 10px 10px 8px; }
+  .piano { height: 64px; }
+  .bks { height: 40px; }
+}
