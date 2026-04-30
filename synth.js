@@ -14,6 +14,17 @@ const mods = {};     // id → module descriptor
 let modCount = 0;
 function uid() { return 'm' + (++modCount); }
 
+// ---- Canvas view (pan + zoom) ----
+const view = { scale: 1, tx: 0, ty: 0 };
+function applyView() {
+  const c = document.getElementById('canvas-content');
+  if (c) c.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`;
+}
+function resetView() {
+  view.scale = 1; view.tx = 0; view.ty = 0;
+  applyView();
+}
+
 // ---- Helpers ----
 function midiToFreq(n) { return 440 * Math.pow(2, (n - 69) / 12); }
 const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -152,11 +163,37 @@ function spawnModule(id, desc, html, x, y, extraClass = '') {
   el.style.left = x + 'px';
   el.style.top = y + 'px';
   el.innerHTML = html;
-  document.getElementById('canvas-wrap').appendChild(el);
+  document.getElementById('canvas-content').appendChild(el);
   el.querySelectorAll('.port-dot').forEach(d => d.addEventListener('click', onPortClick));
   desc.el = el;
+  desc.id = id;
   mods[id] = desc;
-  makeDraggable(el);
+  makeDraggable(el, id);
+}
+
+// ---- Module removal ----
+function removeModule(id) {
+  const m = mods[id]; if (!m) return;
+  const toRemove = cables.filter(c => c.fromId === id || c.toId === id);
+  toRemove.forEach(c => {
+    disconnectPair(c.fromId, c.fromPort, c.toId, c.toPort);
+    cables.splice(cables.indexOf(c), 1);
+  });
+  toRemove.forEach(c => {
+    if (c.fromId !== id) refreshDotState(c.fromId, c.fromPort, 'out');
+    if (c.toId   !== id) refreshDotState(c.toId,   c.toPort,   'in');
+  });
+
+  try {
+    if (m.osc)    m.osc.stop();
+    if (m.modSrc) m.modSrc.stop();
+  } catch (e) {}
+  if (m.intervalId) clearInterval(m.intervalId);
+
+  m.el.remove();
+  delete mods[id];
+  redrawCables();
+  setStatus('module deleted');
 }
 
 // ---- OSC module ----
@@ -474,32 +511,74 @@ function setArpDir(id, dir, btn) {
   btn.classList.add('active');
 }
 
-// ---- Dragging ----
-function makeDraggable(el) {
-  let ox, oy, down = false;
-  el.addEventListener('mousedown', e => {
-    if (['INPUT', 'BUTTON'].includes(e.target.tagName) || e.target.classList.contains('port-dot')) return;
-    down = true; el.classList.add('dragging');
-    const r = el.getBoundingClientRect();
-    ox = e.clientX - r.left; oy = e.clientY - r.top;
+// ---- Dragging + long-press ----
+const LONG_PRESS_MS = 600;
+const LONG_PRESS_MOVE = 8;
+
+function makeDraggable(el, id) {
+  let down = false, dragging = false;
+  let startX = 0, startY = 0;     // pointer start (screen)
+  let elStartX = 0, elStartY = 0; // module start (canvas coords)
+  let lpTimer = null, captured = false;
+
+  el.addEventListener('pointerdown', e => {
+    if (['INPUT', 'BUTTON'].includes(e.target.tagName) ||
+        e.target.classList.contains('port-dot') ||
+        e.target.tagName === 'LABEL') return;
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+
+    down = true; dragging = false;
+    startX = e.clientX; startY = e.clientY;
+    elStartX = parseFloat(el.style.left) || 0;
+    elStartY = parseFloat(el.style.top)  || 0;
+
+    try { el.setPointerCapture(e.pointerId); captured = true; } catch (err) { captured = false; }
+
+    lpTimer = setTimeout(() => {
+      if (down && !dragging) {
+        el.classList.add('long-press');
+        setTimeout(() => removeModule(id), 150);
+      }
+    }, LONG_PRESS_MS);
+
     e.preventDefault();
   });
-  document.addEventListener('mousemove', e => {
+
+  el.addEventListener('pointermove', e => {
     if (!down) return;
-    const wrap = document.getElementById('canvas-wrap').getBoundingClientRect();
-    el.style.left = Math.max(0, e.clientX - wrap.left - ox) + 'px';
-    el.style.top = Math.max(0, e.clientY - wrap.top - oy) + 'px';
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    if (!dragging && (Math.abs(dx) > LONG_PRESS_MOVE || Math.abs(dy) > LONG_PRESS_MOVE)) {
+      dragging = true;
+      el.classList.add('dragging');
+      if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+    }
+    if (!dragging) return;
+    const s = view.scale || 1;
+    el.style.left = Math.max(0, elStartX + dx / s) + 'px';
+    el.style.top  = Math.max(0, elStartY + dy / s) + 'px';
     redrawCables();
   });
-  document.addEventListener('mouseup', () => { if (down) { down = false; el.classList.remove('dragging'); } });
+
+  const end = (e) => {
+    if (!down) return;
+    down = false;
+    if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+    el.classList.remove('dragging');
+    if (captured) { try { el.releasePointerCapture(e.pointerId); } catch (err) {} captured = false; }
+    dragging = false;
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
 }
 
 // ---- Cable drawing ----
 function redrawCables() {
   const svg = document.getElementById('svg-layer');
   const wrap = document.getElementById('canvas-wrap');
-  svg.setAttribute('width', wrap.offsetWidth);
-  svg.setAttribute('height', wrap.offsetHeight);
+  // size SVG large enough to cover any zoomed/panned position; transform on parent scales it
+  svg.setAttribute('width',  Math.max(wrap.offsetWidth,  4000));
+  svg.setAttribute('height', Math.max(wrap.offsetHeight, 4000));
   svg.innerHTML = '';
   cables.forEach(c => {
     const a = getDotPos(c.fromId, c.fromPort, 'out');
@@ -518,14 +597,20 @@ function redrawCables() {
   });
 }
 
+// dot position in canvas (pre-transform) coordinates
 function getDotPos(id, port, dir) {
   const m = mods[id]; if (!m) return null;
   const actualDir = (port === 'pitch-out' || port === 'mod-out') ? 'out' : dir;
   const dot = m.el.querySelector(`.port-dot[data-port="${port}"][data-dir="${actualDir}"]`);
   if (!dot) return null;
-  const wrap = document.getElementById('canvas-wrap').getBoundingClientRect();
+  const content = document.getElementById('canvas-content');
+  const cRect = content.getBoundingClientRect();
   const r = dot.getBoundingClientRect();
-  return { x: r.left - wrap.left + r.width / 2, y: r.top - wrap.top + r.height / 2 };
+  const s = view.scale || 1;
+  return {
+    x: (r.left - cRect.left) / s + r.width  / (2 * s),
+    y: (r.top  - cRect.top)  / s + r.height / (2 * s)
+  };
 }
 
 // ---- Envelope (VCA) module ----
@@ -684,6 +769,89 @@ function highlightKey(midi, on, cls = 'on') {
   if (on) el.classList.add(cls);
 }
 
+// ---- Canvas pan + zoom gestures ----
+function initCanvasGestures() {
+  const wrap = document.getElementById('canvas-wrap');
+  const pointers = new Map(); // pointerId → { x, y }
+  let panLast = null;
+  let pinchPrev = null; // { dist, cx, cy }
+
+  wrap.addEventListener('pointerdown', e => {
+    // ignore if pointer started on a module / control
+    if (e.target.closest('.module')) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { wrap.setPointerCapture(e.pointerId); } catch (err) {}
+
+    if (pointers.size === 1) {
+      panLast = { x: e.clientX, y: e.clientY };
+      pinchPrev = null;
+    } else if (pointers.size === 2) {
+      const pts = [...pointers.values()];
+      pinchPrev = pinchState(pts[0], pts[1]);
+      panLast = null;
+    }
+    e.preventDefault();
+  });
+
+  wrap.addEventListener('pointermove', e => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointers.size === 1 && panLast) {
+      view.tx += e.clientX - panLast.x;
+      view.ty += e.clientY - panLast.y;
+      panLast = { x: e.clientX, y: e.clientY };
+      applyView();
+    } else if (pointers.size === 2) {
+      const pts = [...pointers.values()];
+      const cur = pinchState(pts[0], pts[1]);
+      if (pinchPrev && pinchPrev.dist > 0) {
+        const factor = cur.dist / pinchPrev.dist;
+        zoomAt(cur.cx, cur.cy, factor);
+      }
+      pinchPrev = cur;
+    }
+  });
+
+  const endPointer = e => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinchPrev = null;
+    if (pointers.size === 0) panLast = null;
+    if (pointers.size === 1) {
+      const last = [...pointers.values()][0];
+      panLast = { x: last.x, y: last.y };
+    }
+    try { wrap.releasePointerCapture(e.pointerId); } catch (err) {}
+  };
+  wrap.addEventListener('pointerup', endPointer);
+  wrap.addEventListener('pointercancel', endPointer);
+
+  wrap.addEventListener('wheel', e => {
+    if (e.target.closest('.module')) return;
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    zoomAt(e.clientX, e.clientY, factor);
+  }, { passive: false });
+}
+
+function pinchState(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  return { dist: Math.hypot(dx, dy), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
+}
+
+function zoomAt(clientX, clientY, factor) {
+  const wrap = document.getElementById('canvas-wrap').getBoundingClientRect();
+  const px = clientX - wrap.left;
+  const py = clientY - wrap.top;
+  const newScale = Math.min(2.5, Math.max(0.3, view.scale * factor));
+  const realFactor = newScale / view.scale;
+  view.tx = px - (px - view.tx) * realFactor;
+  view.ty = py - (py - view.ty) * realFactor;
+  view.scale = newScale;
+  applyView();
+}
+
 // ---- Computer keyboard ----
 const KEY_MAP = { a:0,w:1,s:2,e:3,d:4,f:5,t:6,g:7,y:8,h:9,u:10,j:11,k:12,o:13,l:14 };
 const BASE = 48;
@@ -699,9 +867,32 @@ document.addEventListener('keyup', e => {
   if (k in KEY_MAP) { pressed.delete(k); noteOff(BASE + KEY_MAP[k]); }
 });
 
-// ---- Mouse piano ----
-let mouseMidi = null;
-document.addEventListener('mouseup', () => { if (mouseMidi != null) { noteOff(mouseMidi); mouseMidi = null; } });
+// ---- Pointer piano (multitouch) ----
+const pianoPointers = new Map(); // pointerId → midi
+
+function attachKey(el, midi) {
+  el.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    e.preventDefault();
+    pianoPointers.set(e.pointerId, midi);
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    noteOn(midi);
+  });
+  const release = e => {
+    const m = pianoPointers.get(e.pointerId);
+    if (m == null) return;
+    pianoPointers.delete(e.pointerId);
+    try { el.releasePointerCapture(e.pointerId); } catch (err) {}
+    noteOff(m);
+  };
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
+  el.addEventListener('pointerleave', e => {
+    // only release if pointer is up (touch/mouse leaving while held shouldn't release on captured)
+    if (!pianoPointers.has(e.pointerId)) return;
+    if (e.buttons === 0 && e.pointerType === 'mouse') release(e);
+  });
+}
 
 function buildPiano() {
   const piano = document.getElementById('piano');
@@ -711,7 +902,7 @@ function buildPiano() {
       const midi = (s + oct) * 12 + semi;
       const k = document.createElement('div');
       k.className = 'wk'; k.dataset.midi = midi;
-      k.onmousedown = () => { mouseMidi = midi; noteOn(midi); };
+      attachKey(k, midi);
       piano.appendChild(k);
     });
   }
@@ -723,7 +914,7 @@ function buildPiano() {
       const k = document.createElement('div');
       k.className = 'bk'; k.dataset.midi = midi;
       k.style.cssText = `left:${((oct*7)+off)*kw}%;width:${kw*0.6}%;height:100%`;
-      k.onmousedown = e => { e.stopPropagation(); mouseMidi = midi; noteOn(midi); };
+      attachKey(k, midi);
       bk.appendChild(k);
     });
   }
@@ -731,6 +922,8 @@ function buildPiano() {
 }
 
 // ---- Init ----
+applyView();
+initCanvasGestures();
 buildPiano();
 addOsc(20, 20);
 addOsc(170, 20);
