@@ -427,11 +427,14 @@ function arpTick(id) {
 
   m.currentMidi = midi;
   highlightKey(midi, true, 'on');
+  triggerEnvOn();
 
   // gate off
   const gateDur = (1 / m.rate) * m.gate * 1000;
   const capMidi = midi;
-  setTimeout(() => { if (m.currentMidi === capMidi) highlightKey(capMidi, false); }, gateDur);
+  setTimeout(() => {
+    if (m.currentMidi === capMidi) { highlightKey(capMidi, false); triggerEnvOff(); }
+  }, gateDur);
 
   document.getElementById(id + '-seq').textContent =
     seq.map((n, i) => i === m.step ? '[' + noteName(n) + ']' : noteName(n)).join(' ');
