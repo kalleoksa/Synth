@@ -44,14 +44,20 @@ function resolveNodes(fromId, fromPort, toId, toPort) {
   const src = mods[fromId], dst = mods[toId];
   if (!src || !dst) return null;
 
-  const srcNode = fromPort === 'out'     ? src.audioOut
-                : fromPort === 'mod-out' ? src.modOut
-                : null;
+  let srcNode = src.outputs?.[fromPort] ?? null;
+  if (!srcNode) {
+    srcNode = fromPort === 'out'     ? src.audioOut
+            : fromPort === 'mod-out' ? src.modOut
+            : null;
+  }
 
-  const dstNode = toPort === 'in'       ? dst.audioIn
-                : toPort === 'mod'      ? dst.modIn
-                : toPort === 'rate-mod' ? dst.rateModIn
-                : null;
+  let dstNode = dst.inputs?.[toPort] ?? null;
+  if (!dstNode) {
+    dstNode = toPort === 'in'       ? dst.audioIn
+            : toPort === 'mod'      ? dst.modIn
+            : toPort === 'rate-mod' ? dst.rateModIn
+            : null;
+  }
 
   return (srcNode && dstNode) ? { srcNode, dstNode } : null;
 }
@@ -422,6 +428,113 @@ function addOutput(x, y) {
     <div class="ports">
       <div class="port-col">${portH(id, 'in', 'in', 'in')}</div>
     </div>`, x, y, 'output-mod');
+}
+
+// ---- Noise module ----
+function addNoise(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+
+  const buf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+
+  const src = AC.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+
+  const gain = AC.createGain();
+  gain.gain.value = 0.5;
+  src.connect(gain);
+  src.start();
+
+  const desc = {
+    type: 'noise', src, gain,
+    audioIn: null, audioOut: gain,
+    modIn: null, rateModIn: null, modOut: null
+  };
+
+  spawnModule(id, desc, `
+    <div class="mod-title">Noise</div>
+    <div class="mod-knob">
+      <label>level</label>
+      <input type="range" min="0" max="1" value="0.5" step="0.01"
+        oninput="mods['${id}'].gain.gain.value=+this.value;this.nextElementSibling.textContent=Math.round(this.value*100)+'%'">
+      <span>50%</span>
+    </div>
+    <div class="ports">
+      <div class="port-col outputs">${portH(id, 'out', 'out', 'out')}</div>
+    </div>`, x, y, 'noise-mod');
+}
+
+// ---- Mixer module (CP3-style) ----
+function addMixer(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+
+  const sum = AC.createGain();
+  sum.gain.value = 1;
+
+  // Asymmetric soft-clip waveshaper for CP3-style overdrive at high levels
+  const shaper = AC.createWaveShaper();
+  const N = 1024, curve = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    const x = (i / (N - 1)) * 2 - 1;
+    curve[i] = Math.tanh(x * 1.6) * 0.95 + x * 0.05;
+  }
+  shaper.curve = curve;
+  shaper.oversample = '2x';
+
+  const master = AC.createGain();
+  master.gain.value = 0.7;
+
+  sum.connect(shaper);
+  shaper.connect(master);
+
+  const inputs = {};
+  const channelGains = [];
+  for (let i = 1; i <= 6; i++) {
+    const g = AC.createGain();
+    g.gain.value = 0.5;
+    g.connect(sum);
+    inputs['in-' + i] = g;
+    channelGains.push(g);
+  }
+
+  const desc = {
+    type: 'mixer', sum, shaper, master, channelGains,
+    audioIn: null, audioOut: master,
+    inputs,
+    modIn: null, rateModIn: null, modOut: null
+  };
+
+  let knobs = '';
+  for (let i = 1; i <= 6; i++) {
+    knobs += `
+      <div class="mod-knob">
+        <label>ch ${i}</label>
+        <input type="range" min="0" max="1" value="0.5" step="0.01"
+          oninput="mods['${id}'].channelGains[${i - 1}].gain.value=+this.value;this.nextElementSibling.textContent=Math.round(this.value*100)+'%'">
+        <span>50%</span>
+      </div>`;
+  }
+
+  let portsCol = '';
+  for (let i = 1; i <= 6; i++) portsCol += portH(id, 'in-' + i, 'in', 'ch' + i);
+
+  spawnModule(id, desc, `
+    <div class="mod-title">Mixer (CP3)</div>
+    ${knobs}
+    <div class="mod-knob">
+      <label>master</label>
+      <input type="range" min="0" max="2" value="0.7" step="0.01"
+        oninput="mods['${id}'].master.gain.value=+this.value;this.nextElementSibling.textContent=parseFloat(this.value).toFixed(2)+'x'">
+      <span>0.70x</span>
+    </div>
+    <div class="ports">
+      <div class="port-col">${portsCol}</div>
+      <div class="port-col outputs">${portH(id, 'out', 'out', 'out')}</div>
+    </div>`, x, y, 'mixer-mod');
 }
 
 // ---- Wave buttons ----
