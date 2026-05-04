@@ -89,6 +89,8 @@ body {
 .module.arp-mod    { border-color: #8E44AD; }
 .module.env-mod    { border-color: #185FA5; }
 .module.drone-mod  { border-color: #BA7517; }
+.module.noise-mod  { border-color: #888; }
+.module.mixer-mod  { border-color: #C44767; min-width: 150px; }
 
 .env-indicator {
   height: 28px;
