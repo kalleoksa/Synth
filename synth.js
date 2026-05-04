@@ -215,7 +215,7 @@ function addOsc(x, y) {
   osc.start();
 
   const desc = {
-    type: 'osc', osc, gain, octave: 0, currentMidi: null,
+    type: 'osc', osc, gain, octave: 0, voiceSlot: 1, currentMidi: null,
     audioIn: null, audioOut: gain,
     modIn: osc.detune,       // LFO → detune
     rateModIn: null, modOut: null
@@ -228,6 +228,12 @@ function addOsc(x, y) {
       <button class="wave-btn" onclick="setWaveBtn('${id}','osc','square',this)">SQR</button>
       <button class="wave-btn" onclick="setWaveBtn('${id}','osc','sine',this)">SIN</button>
       <button class="wave-btn" onclick="setWaveBtn('${id}','osc','triangle',this)">TRI</button>
+    </div>
+    <div class="wave-row">
+      <button class="wave-btn active" onclick="setVoiceSlot('${id}',1,this)">V1</button>
+      <button class="wave-btn" onclick="setVoiceSlot('${id}',2,this)">V2</button>
+      <button class="wave-btn" onclick="setVoiceSlot('${id}',3,this)">V3</button>
+      <button class="wave-btn" onclick="setVoiceSlot('${id}',4,this)">V4</button>
     </div>
     <div class="mod-knob">
       <label>detune</label>
@@ -600,6 +606,110 @@ function addMultiple(x, y) {
       <div class="port-col">${portH(id, 'in', 'in', 'in')}</div>
       <div class="port-col outputs">${portsRight}</div>
     </div>`, x, y, 'multiple-mod');
+}
+
+// ---- Voice Router (paraphony) ----
+function effectiveVoiceIndex(slot, mode) {
+  if (mode === 'mono') return 0;
+  if (mode === 'duo')  return slot <= 2 ? 0 : 1;
+  return Math.max(0, Math.min(3, slot - 1));
+}
+
+function allocateVoice(vr, midi, time) {
+  let slot = vr.voices.findIndex(v => v.midi === null);
+  if (slot < 0) {
+    let oldestTime = Infinity, oldestSlot = 0;
+    vr.voices.forEach((v, i) => {
+      if (v.time < oldestTime) { oldestTime = v.time; oldestSlot = i; }
+    });
+    slot = oldestSlot;
+  }
+  vr.voices[slot] = { midi, time };
+  return slot;
+}
+
+function releaseVoice(vr, midi) {
+  const slot = vr.voices.findIndex(v => v.midi === midi);
+  if (slot >= 0) vr.voices[slot] = { midi: null, time: 0 };
+}
+
+function applyVoicesToOscs(vr) {
+  Object.values(mods).forEach(m => {
+    if (m.type !== 'osc') return;
+    const slot = m.voiceSlot || 1;
+    const idx = effectiveVoiceIndex(slot, vr.mode);
+    const v = vr.voices[idx];
+    if (v && v.midi != null) {
+      m.currentMidi = v.midi;
+      m.osc.frequency.value = midiToFreq(v.midi + (m.octave || 0) * 12);
+    }
+  });
+}
+
+function updateVrDisplay(id) {
+  const vr = mods[id]; if (!vr) return;
+  const el = document.getElementById(id + '-voices');
+  if (!el) return;
+  el.textContent = vr.voices
+    .map((v, i) => `v${i + 1}: ${v.midi != null ? noteName(v.midi) : '—'}`)
+    .join('   ');
+}
+
+function findVoiceRouter() {
+  return Object.values(mods).find(m => m.type === 'voice-router');
+}
+
+function addVoiceRouter(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+
+  const desc = {
+    type: 'voice-router',
+    mode: 'mono', numVoices: 1,
+    heldKeys: new Map(),                   // midi -> time
+    voices: [{ midi: null, time: 0 }],
+    audioIn: null, audioOut: null, modIn: null, rateModIn: null, modOut: null
+  };
+
+  desc.applyMode = function () {
+    desc.numVoices = desc.mode === 'mono' ? 1 : desc.mode === 'duo' ? 2 : 4;
+    desc.voices = Array.from({ length: desc.numVoices }, () => ({ midi: null, time: 0 }));
+    const sorted = [...desc.heldKeys.entries()].sort((a, b) => a[1] - b[1]);
+    for (const [midi, time] of sorted) allocateVoice(desc, midi, time);
+    applyVoicesToOscs(desc);
+    updateVrDisplay(id);
+  };
+
+  spawnModule(id, desc, `
+    <div class="mod-title">Voice Router</div>
+    <div class="wave-row" id="${id}-mode">
+      <button class="wave-btn active" onclick="setVrMode('${id}','mono',this)">MONO</button>
+      <button class="wave-btn" onclick="setVrMode('${id}','duo',this)">DUO</button>
+      <button class="wave-btn" onclick="setVrMode('${id}','quad',this)">QUAD</button>
+    </div>
+    <div class="vr-voices" id="${id}-voices">v1: —</div>
+    <div style="font-size:9px;color:#555;margin-top:4px;">
+      OSC voice slots route by mode<br>
+      duo: slots 1–2 → v1, 3–4 → v2
+    </div>
+  `, x, y, 'voice-router-mod');
+}
+
+function setVrMode(id, mode, btn) {
+  const m = mods[id];
+  m.mode = mode;
+  m.applyMode();
+  btn.closest('.wave-row').querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function setVoiceSlot(id, slot, btn) {
+  const m = mods[id];
+  m.voiceSlot = slot;
+  btn.closest('.wave-row').querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const vr = findVoiceRouter();
+  if (vr) applyVoicesToOscs(vr);
 }
 
 // ---- Stereo Delay module (stereo / ping-pong) ----
@@ -1323,39 +1433,62 @@ function toggleDrone(id, on) {
     triggerEnvOff();
     m.heldNotes.clear();
     document.getElementById(id + '-notes').textContent = '—';
+    const vr = findVoiceRouter();
+    if (vr) {
+      vr.heldKeys.clear();
+      vr.voices.forEach(v => { v.midi = null; v.time = 0; });
+      updateVrDisplay(vr.id);
+    }
   }
 }
 
 // ---- Notes ----
+function setAllOscFreq(midi) {
+  Object.values(mods).forEach(m => {
+    if (m.type === 'osc') {
+      m.currentMidi = midi;
+      m.osc.frequency.value = midiToFreq(midi + (m.octave || 0) * 12);
+    }
+  });
+}
+
 function noteOn(midi) {
   if (AC.state === 'suspended') AC.resume();
 
-  const droneActive = Object.values(mods).some(m => m.type === 'drone' && m.on);
-  if (droneActive) {
-    Object.entries(mods).forEach(([id, m]) => {
-      if (m.type !== 'drone' || !m.on || m.heldNotes.has(midi)) return;
-      m.heldNotes.add(midi);
-      Object.values(mods).forEach(mod => {
-        if (mod.type === 'osc') { mod.currentMidi = midi; mod.osc.frequency.value = midiToFreq(midi + (mod.octave || 0) * 12); }
-      });
-      triggerEnvOn();
-      highlightKey(midi, true, 'held');
-      document.getElementById(id + '-notes').textContent = Array.from(m.heldNotes).map(noteName).join(' ');
-    });
-    return;
-  }
-
+  // ARP overrides everything (it manages its own pitch driving)
   const arpActive = Object.values(mods).some(m => m.type === 'arp' && m.on);
   if (arpActive) {
     Object.values(mods).forEach(m => { if (m.type === 'arp') { m.heldKeys.add(midi); highlightKey(midi, true, 'held'); } });
     return;
   }
 
-  Object.values(mods).forEach(m => {
-    if (m.type === 'osc') { m.currentMidi = midi; m.osc.frequency.value = midiToFreq(midi + (m.octave || 0) * 12); }
-  });
-  triggerEnvOn();
-  highlightKey(midi, true, 'on');
+  const droneActive = Object.values(mods).some(m => m.type === 'drone' && m.on);
+  const vr = findVoiceRouter();
+
+  if (droneActive) {
+    Object.entries(mods).forEach(([id, m]) => {
+      if (m.type === 'drone' && m.on && !m.heldNotes.has(midi)) {
+        m.heldNotes.add(midi);
+        document.getElementById(id + '-notes').textContent = Array.from(m.heldNotes).map(noteName).join(' ');
+      }
+    });
+  }
+
+  if (vr) {
+    if (vr.heldKeys.has(midi)) return;
+    const wasEmpty = vr.heldKeys.size === 0;
+    const t = AC.currentTime;
+    vr.heldKeys.set(midi, t);
+    allocateVoice(vr, midi, t);
+    applyVoicesToOscs(vr);
+    if (wasEmpty) triggerEnvOn();
+    updateVrDisplay(vr.id);
+  } else {
+    setAllOscFreq(midi);
+    triggerEnvOn();
+  }
+
+  highlightKey(midi, true, droneActive ? 'held' : 'on');
 }
 
 function noteOff(midi) {
@@ -1368,7 +1501,16 @@ function noteOff(midi) {
     return;
   }
 
-  triggerEnvOff();
+  const vr = findVoiceRouter();
+  if (vr) {
+    vr.heldKeys.delete(midi);
+    releaseVoice(vr, midi);
+    if (vr.heldKeys.size === 0) triggerEnvOff();
+    updateVrDisplay(vr.id);
+  } else {
+    triggerEnvOff();
+  }
+
   highlightKey(midi, false);
 }
 
