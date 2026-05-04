@@ -468,6 +468,140 @@ function addStereoOutput(x, y) {
     </div>`, x, y, 'stereo-output-mod');
 }
 
+// ---- LFO 2 module (triangle + square outputs) ----
+function addLfo2(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+
+  const triOsc = AC.createOscillator();
+  triOsc.type = 'triangle';
+  triOsc.frequency.value = 1;
+
+  const sqOsc = AC.createOscillator();
+  sqOsc.type = 'square';
+  sqOsc.frequency.value = 1;
+
+  const triOut = AC.createGain();
+  const sqOut  = AC.createGain();
+  triOut.gain.value = 500;
+  sqOut.gain.value  = 500;
+
+  triOsc.connect(triOut);
+  sqOsc.connect(sqOut);
+  triOsc.start();
+  sqOsc.start();
+
+  const rateFanOut = AC.createGain();
+  rateFanOut.gain.value = 1;
+  rateFanOut.connect(triOsc.frequency);
+  rateFanOut.connect(sqOsc.frequency);
+
+  const desc = {
+    type: 'lfo2', triOsc, sqOsc, triOut, sqOut, rateFanOut,
+    inputs:  { 'rate-mod': rateFanOut },
+    outputs: { 'tri-out': triOut, 'sq-out': sqOut },
+    audioIn: null, audioOut: null, modIn: null, rateModIn: null, modOut: null
+  };
+
+  spawnModule(id, desc, `
+    <div class="mod-title">LFO 2</div>
+    <div class="mod-knob">
+      <label>rate</label>
+      <input type="range" min="0.07" max="520" value="1" step="0.01"
+        oninput="mods['${id}'].triOsc.frequency.value=+this.value;mods['${id}'].sqOsc.frequency.value=+this.value;this.nextElementSibling.textContent=parseFloat(this.value).toFixed(2)+'Hz'">
+      <span>1.00Hz</span>
+    </div>
+    <div class="mod-knob">
+      <label>depth</label>
+      <input type="range" min="0" max="4000" value="500" step="10"
+        oninput="mods['${id}'].triOut.gain.value=+this.value;mods['${id}'].sqOut.gain.value=+this.value;this.nextElementSibling.textContent=this.value">
+      <span>500</span>
+    </div>
+    <div class="ports">
+      <div class="port-col">${portH(id, 'rate-mod', 'in', 'rate')}</div>
+      <div class="port-col outputs">
+        ${portH(id, 'tri-out', 'out', 'tri')}
+        ${portH(id, 'sq-out', 'out', 'sq')}
+      </div>
+    </div>`, x, y, 'lfo2-mod');
+}
+
+// ---- Bipolar Attenuator module (3 channels, gain -1..+1) ----
+function addAttenuator(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+
+  const inputs = {};
+  const outputs = {};
+  const channels = [];
+  for (let i = 1; i <= 3; i++) {
+    const g = AC.createGain();
+    g.gain.value = 1;
+    inputs['in-' + i]  = g;
+    outputs['out-' + i] = g;
+    channels.push(g);
+  }
+
+  const desc = {
+    type: 'attenuator', channels,
+    inputs, outputs,
+    audioIn: null, audioOut: null, modIn: null, rateModIn: null, modOut: null
+  };
+
+  let body = '';
+  for (let i = 1; i <= 3; i++) {
+    body += `
+      <div class="mod-knob">
+        <label>ch ${i}</label>
+        <input type="range" min="-1" max="1" value="1" step="0.01"
+          oninput="mods['${id}'].channels[${i - 1}].gain.value=+this.value;this.nextElementSibling.textContent=(this.value>0?'+':'')+parseFloat(this.value).toFixed(2)">
+        <span>+1.00</span>
+      </div>`;
+  }
+
+  let portsLeft = '';
+  let portsRight = '';
+  for (let i = 1; i <= 3; i++) {
+    portsLeft  += portH(id, 'in-' + i,  'in',  'in ' + i);
+    portsRight += portH(id, 'out-' + i, 'out', 'out ' + i);
+  }
+
+  spawnModule(id, desc, `
+    <div class="mod-title">Bipolar Atten.</div>
+    ${body}
+    <div class="ports">
+      <div class="port-col">${portsLeft}</div>
+      <div class="port-col outputs">${portsRight}</div>
+    </div>`, x, y, 'attenuator-mod');
+}
+
+// ---- Multiple module (passive 1->4 splitter) ----
+function addMultiple(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+
+  const fan = AC.createGain();
+  fan.gain.value = 1;
+
+  const desc = {
+    type: 'multiple', fan,
+    inputs:  { 'in': fan },
+    outputs: { 'out-1': fan, 'out-2': fan, 'out-3': fan, 'out-4': fan },
+    audioIn: null, audioOut: null, modIn: null, rateModIn: null, modOut: null
+  };
+
+  let portsRight = '';
+  for (let i = 1; i <= 4; i++) portsRight += portH(id, 'out-' + i, 'out', String(i));
+
+  spawnModule(id, desc, `
+    <div class="mod-title">Multiple</div>
+    <div style="font-size:9px;color:#555;margin:4px 0 8px;">passive 1 → 4 splitter</div>
+    <div class="ports">
+      <div class="port-col">${portH(id, 'in', 'in', 'in')}</div>
+      <div class="port-col outputs">${portsRight}</div>
+    </div>`, x, y, 'multiple-mod');
+}
+
 // ---- Stereo Delay module (stereo / ping-pong) ----
 function addDelay(x, y) {
   const id = uid();

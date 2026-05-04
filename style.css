@@ -95,6 +95,9 @@ body {
 .module.vca-mod { border-color: #6B8E23; }
 .module.stereo-output-mod { border-color: #3B6D11; }
 .module.delay-mod { border-color: #4682B4; }
+.module.lfo2-mod { border-color: #6FA8DC; }
+.module.attenuator-mod { border-color: #B5651D; }
+.module.multiple-mod { border-color: #555; }
 
 .env-indicator {
   height: 28px;
