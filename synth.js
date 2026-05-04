@@ -430,6 +430,134 @@ function addOutput(x, y) {
     </div>`, x, y, 'output-mod');
 }
 
+// ---- Dual Filter module (LP + HP, series / parallel / stereo) ----
+function addDualFilter(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+
+  const inputGain = AC.createGain();
+  inputGain.gain.value = 1;
+
+  const lp = AC.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 2000;
+  lp.Q.value = 1;
+
+  const hp = AC.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 2000;
+  hp.Q.value = 1;
+
+  const merger = AC.createChannelMerger(2);
+
+  const outNode = AC.createGain();
+  outNode.gain.value = 0.5; // halve to avoid summed-output clipping in parallel mode
+
+  const modFanOut = AC.createGain();
+  modFanOut.gain.value = 1;
+  modFanOut.connect(lp.frequency);
+  modFanOut.connect(hp.frequency);
+
+  const desc = {
+    type: 'dualfilter',
+    inputGain, lp, hp, merger, outNode, modFanOut,
+    baseCutoff: 2000,
+    spacing: 0,
+    mode: 'series',
+    audioIn: null, audioOut: null,
+    inputs:  { 'in': inputGain, 'mod': modFanOut },
+    outputs: { 'out': outNode, 'lp-out': lp, 'hp-out': hp },
+    modIn: null, rateModIn: null, modOut: null
+  };
+
+  desc.applyFreqs = function () {
+    lp.frequency.value = desc.baseCutoff;
+    hp.frequency.value = desc.baseCutoff * Math.pow(2, desc.spacing / 12);
+  };
+
+  desc.applyMode = function () {
+    inputGain.disconnect();
+    lp.disconnect();
+    hp.disconnect();
+    try { merger.disconnect(); } catch (e) {}
+
+    if (desc.mode === 'series') {
+      hp.type = 'highpass';
+      inputGain.connect(hp);
+      hp.connect(lp);
+      lp.connect(outNode);
+    } else if (desc.mode === 'parallel') {
+      hp.type = 'highpass';
+      inputGain.connect(hp);
+      inputGain.connect(lp);
+      hp.connect(outNode);
+      lp.connect(outNode);
+    } else {
+      hp.type = 'lowpass'; // becomes second LP for stereo mode
+      inputGain.connect(lp);
+      inputGain.connect(hp);
+      lp.connect(merger, 0, 0);
+      hp.connect(merger, 0, 1);
+      merger.connect(outNode);
+    }
+  };
+
+  desc.applyMode();
+  desc.applyFreqs();
+
+  spawnModule(id, desc, `
+    <div class="mod-title">Dual Filter</div>
+    <div class="wave-row" id="${id}-mode">
+      <button class="wave-btn active" onclick="setFilterMode('${id}','series',this)">SER</button>
+      <button class="wave-btn" onclick="setFilterMode('${id}','parallel',this)">PAR</button>
+      <button class="wave-btn" onclick="setFilterMode('${id}','stereo',this)">STE</button>
+    </div>
+    <div class="mod-knob">
+      <label>cutoff</label>
+      <input type="range" min="20" max="20000" value="2000" step="1"
+        oninput="mods['${id}'].baseCutoff=+this.value;mods['${id}'].applyFreqs();this.nextElementSibling.textContent=this.value>999?(this.value/1000).toFixed(1)+'kHz':this.value+'Hz'">
+      <span>2.0kHz</span>
+    </div>
+    <div class="mod-knob">
+      <label>spacing</label>
+      <input type="range" min="-24" max="24" value="0" step="1"
+        oninput="mods['${id}'].spacing=+this.value;mods['${id}'].applyFreqs();this.nextElementSibling.textContent=(this.value>0?'+':'')+this.value+'st'">
+      <span>0st</span>
+    </div>
+    <div class="mod-knob">
+      <label>res LP</label>
+      <input type="range" min="0.1" max="20" value="1" step="0.1"
+        oninput="mods['${id}'].lp.Q.value=+this.value;this.nextElementSibling.textContent=parseFloat(this.value).toFixed(1)">
+      <span>1.0</span>
+    </div>
+    <div class="mod-knob">
+      <label>res HP</label>
+      <input type="range" min="0.1" max="20" value="1" step="0.1"
+        oninput="mods['${id}'].hp.Q.value=+this.value;this.nextElementSibling.textContent=parseFloat(this.value).toFixed(1)">
+      <span>1.0</span>
+    </div>
+    <div class="ports">
+      <div class="port-col">
+        ${portH(id, 'in', 'in', 'in')}
+        ${portH(id, 'mod', 'in', 'mod')}
+      </div>
+      <div class="port-col outputs">
+        ${portH(id, 'lp-out', 'out', 'lp')}
+        ${portH(id, 'hp-out', 'out', 'hp')}
+        ${portH(id, 'out', 'out', 'mix')}
+      </div>
+    </div>`, x, y, 'dualfilter-mod');
+}
+
+function setFilterMode(id, mode, btn) {
+  const m = mods[id];
+  m.mode = mode;
+  m.applyMode();
+  m.applyFreqs();
+  btn.closest('.wave-row').querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
 // ---- Noise module ----
 function addNoise(x, y) {
   const id = uid();
