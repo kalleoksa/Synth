@@ -92,6 +92,8 @@ body {
 .module.noise-mod  { border-color: #888; }
 .module.mixer-mod  { border-color: #C44767; min-width: 150px; }
 .module.dualfilter-mod { border-color: #2E8B8B; min-width: 150px; }
+.module.vca-mod { border-color: #6B8E23; }
+.module.stereo-output-mod { border-color: #3B6D11; }
 
 .env-indicator {
   height: 28px;
