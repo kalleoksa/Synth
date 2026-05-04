@@ -1567,14 +1567,26 @@ function addEnv(x, y) {
   x = x || rp(); y = y || rp(80);
   const envGain = AC.createGain();
   envGain.gain.value = 0;
+
+  // Parallel CV path: ConstantSource(1) feeds a gain whose value tracks the
+  // same envelope ramps. Output of cvGain is the envelope CV (0..1). Patch
+  // cvGain to a VCA's gain.AudioParam to amplitude-modulate audio.
+  const cvGain = AC.createGain();
+  cvGain.gain.value = 0;
+  const cvSrc = AC.createConstantSource();
+  cvSrc.offset.value = 1;
+  cvSrc.start();
+  cvSrc.connect(cvGain);
+
   const desc = {
-    type: 'env', envGain,
+    type: 'env', envGain, cvGain, cvSrc,
     attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.3,
     audioIn: envGain, audioOut: envGain,
+    outputs: { 'out': envGain, 'cv': cvGain },
     modIn: null, rateModIn: null, modOut: null
   };
   spawnModule(id, desc, `
-    <div class="mod-title">Env (VCA)</div>
+    <div class="mod-title">Env</div>
     <canvas id="${id}-canvas" class="env-indicator" width="110" height="28"></canvas>
     <div class="mod-knob"><label>attack</label>
       <input type="range" min="0.001" max="2" value="0.01" step="0.001"
@@ -1594,7 +1606,10 @@ function addEnv(x, y) {
       <span>0.300s</span></div>
     <div class="ports">
       <div class="port-col">${portH(id, 'in', 'in', 'in')}</div>
-      <div class="port-col outputs">${portH(id, 'out', 'out', 'out')}</div>
+      <div class="port-col outputs">
+        ${portH(id, 'out', 'out', 'gate')}
+        ${portH(id, 'cv', 'out', 'cv')}
+      </div>
     </div>`, x, y, 'env-mod');
   setTimeout(() => drawEnvShape(id), 50);
   return id;
@@ -1620,19 +1635,23 @@ function drawEnvShape(id) {
 
 function envNoteOn(id) {
   const m = mods[id]; if (!m) return;
-  const g = m.envGain.gain, t = AC.currentTime;
-  g.cancelScheduledValues(t);
-  g.setValueAtTime(g.value, t);
-  g.linearRampToValueAtTime(1, t + m.attack);
-  g.linearRampToValueAtTime(m.sustain, t + m.attack + m.decay);
+  const t = AC.currentTime;
+  [m.envGain.gain, m.cvGain.gain].forEach(g => {
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(1, t + m.attack);
+    g.linearRampToValueAtTime(m.sustain, t + m.attack + m.decay);
+  });
 }
 
 function envNoteOff(id) {
   const m = mods[id]; if (!m) return;
-  const g = m.envGain.gain, t = AC.currentTime;
-  g.cancelScheduledValues(t);
-  g.setValueAtTime(g.value, t);
-  g.linearRampToValueAtTime(0, t + m.release);
+  const t = AC.currentTime;
+  [m.envGain.gain, m.cvGain.gain].forEach(g => {
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(0, t + m.release);
+  });
 }
 
 function triggerEnvOn()  { Object.entries(mods).forEach(([id, m]) => { if (m.type === 'env') envNoteOn(id);  }); }
@@ -1998,9 +2017,9 @@ setTimeout(() => {
   patch(dfilt, 'out', vca, 'in-l');
   patch(dfilt, 'out', vca, 'in-r');
 
-  // Envs -> VCA CVs
-  patch(env1, 'out', vca, 'cv-l');
-  patch(env2, 'out', vca, 'cv-r');
+  // Envs -> VCA CVs (use the CV output, not the audio gate output)
+  patch(env1, 'cv', vca, 'cv-l');
+  patch(env2, 'cv', vca, 'cv-r');
 
   // VCA -> Delay (stereo)
   patch(vca,   'out-l', delay, 'in-l');
