@@ -1230,6 +1230,219 @@ function setArpDir(id, dir, btn) {
   btn.classList.add('active');
 }
 
+// ---- Step Sequencer module ----
+const SEQ_PITCH_MIN = 36, SEQ_PITCH_MAX = 84;
+
+function addSequencer(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+
+  const modSrc = AC.createConstantSource();
+  modSrc.offset.value = 0;
+  modSrc.start();
+  const modGain = AC.createGain();
+  modGain.gain.value = 1000;
+  modSrc.connect(modGain);
+
+  const desc = {
+    type: 'sequencer',
+    on: false,
+    rate: 120, gate: 0.5, direction: 'fwd', activeSteps: 16,
+    step: -1, stepDir: 1, intervalId: null,
+    seq: Array.from({ length: 16 }, (_, i) => ({
+      pitch: 48 + (i % 8), active: true
+    })),
+    modSrc, modGain,
+    audioIn: null, audioOut: null,
+    modIn: null, rateModIn: null, modOut: modGain
+  };
+
+  let cells = '';
+  for (let i = 0; i < 16; i++) {
+    const pitch = desc.seq[i].pitch;
+    const fillPct = ((pitch - SEQ_PITCH_MIN) / (SEQ_PITCH_MAX - SEQ_PITCH_MIN)) * 100;
+    cells += `
+      <div class="seq-step-cell" id="${id}-cell-${i}">
+        <div class="seq-step-fill" id="${id}-fill-${i}" style="height:${fillPct}%"></div>
+        <div class="seq-step-label" id="${id}-label-${i}">${noteName(pitch)}</div>
+      </div>`;
+  }
+
+  spawnModule(id, desc, `
+    <div class="mod-title">
+      <span>Sequencer</span>
+      <label class="mod-on"><input type="checkbox" onchange="toggleSeq('${id}',this.checked)"> on</label>
+    </div>
+    <div class="wave-row" id="${id}-dir">
+      <button class="wave-btn active" onclick="setSeqDir('${id}','fwd',this)">FWD</button>
+      <button class="wave-btn" onclick="setSeqDir('${id}','back',this)">BCK</button>
+      <button class="wave-btn" onclick="setSeqDir('${id}','updown',this)">UPD</button>
+      <button class="wave-btn" onclick="setSeqDir('${id}','random',this)">RND</button>
+    </div>
+    <div class="wave-row" id="${id}-count">
+      <button class="wave-btn" onclick="setSeqStepCount('${id}',8,this)">8</button>
+      <button class="wave-btn active" onclick="setSeqStepCount('${id}',16,this)">16</button>
+    </div>
+    <div class="mod-knob">
+      <label>rate</label>
+      <input type="range" min="40" max="300" value="120" step="1"
+        oninput="mods['${id}'].rate=+this.value;seqRestart('${id}');this.nextElementSibling.textContent=this.value+' BPM'">
+      <span>120 BPM</span>
+    </div>
+    <div class="mod-knob">
+      <label>gate</label>
+      <input type="range" min="0.05" max="0.95" value="0.5" step="0.01"
+        oninput="mods['${id}'].gate=+this.value;this.nextElementSibling.textContent=Math.round(this.value*100)+'%'">
+      <span>50%</span>
+    </div>
+    <div class="mod-knob">
+      <label>mod depth</label>
+      <input type="range" min="0" max="5000" value="1000" step="10"
+        oninput="mods['${id}'].modGain.gain.value=+this.value;this.nextElementSibling.textContent=this.value">
+      <span>1000</span>
+    </div>
+    <div class="seq-grid">${cells}</div>
+    <div class="ports">
+      <div class="port-col outputs">
+        ${portH(id, 'pitch-out', 'out', 'pitch')}
+        ${portH(id, 'mod-out', 'out', 'mod cv')}
+      </div>
+    </div>`, x, y, 'sequencer-mod');
+
+  for (let i = 0; i < 16; i++) {
+    const cell = document.getElementById(`${id}-cell-${i}`);
+    if (cell) attachStepHandlers(cell, id, i);
+  }
+}
+
+function attachStepHandlers(cellEl, id, stepIdx) {
+  let downY = null, downPitch = null, dragged = false, pid = null;
+
+  cellEl.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    e.preventDefault();
+    downY = e.clientY;
+    downPitch = mods[id].seq[stepIdx].pitch;
+    dragged = false;
+    pid = e.pointerId;
+    try { cellEl.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+
+  cellEl.addEventListener('pointermove', e => {
+    if (downY === null) return;
+    const dy = downY - e.clientY;
+    if (Math.abs(dy) > 4) dragged = true;
+    if (dragged) {
+      const semi = Math.round(dy / 4);
+      const newPitch = Math.max(SEQ_PITCH_MIN, Math.min(SEQ_PITCH_MAX, downPitch + semi));
+      if (newPitch !== mods[id].seq[stepIdx].pitch) setStepPitch(id, stepIdx, newPitch);
+    }
+  });
+
+  const end = () => {
+    if (downY !== null && !dragged) toggleStepActive(id, stepIdx);
+    downY = null;
+    if (pid !== null) {
+      try { cellEl.releasePointerCapture(pid); } catch (err) {}
+      pid = null;
+    }
+  };
+  cellEl.addEventListener('pointerup', end);
+  cellEl.addEventListener('pointercancel', end);
+}
+
+function setStepPitch(id, stepIdx, pitch) {
+  const m = mods[id]; if (!m) return;
+  m.seq[stepIdx].pitch = pitch;
+  const label = document.getElementById(`${id}-label-${stepIdx}`);
+  if (label) label.textContent = noteName(pitch);
+  const fill = document.getElementById(`${id}-fill-${stepIdx}`);
+  if (fill) fill.style.height = ((pitch - SEQ_PITCH_MIN) / (SEQ_PITCH_MAX - SEQ_PITCH_MIN) * 100) + '%';
+}
+
+function toggleStepActive(id, stepIdx) {
+  const m = mods[id]; if (!m) return;
+  m.seq[stepIdx].active = !m.seq[stepIdx].active;
+  const cell = document.getElementById(`${id}-cell-${stepIdx}`);
+  if (cell) cell.classList.toggle('inactive', !m.seq[stepIdx].active);
+}
+
+function setSeqDir(id, dir, btn) {
+  mods[id].direction = dir;
+  mods[id].step = -1;
+  mods[id].stepDir = 1;
+  btn.closest('.wave-row').querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function setSeqStepCount(id, count, btn) {
+  const m = mods[id];
+  m.activeSteps = count;
+  m.step = -1;
+  for (let i = 0; i < 16; i++) {
+    const cell = document.getElementById(`${id}-cell-${i}`);
+    if (cell) cell.classList.toggle('disabled', i >= count);
+  }
+  btn.closest('.wave-row').querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function toggleSeq(id, on) {
+  const m = mods[id]; m.on = on;
+  if (on) {
+    m.step = m.direction === 'back' ? m.activeSteps : -1;
+    m.stepDir = 1;
+    seqRestart(id);
+  } else {
+    if (m.intervalId) { clearInterval(m.intervalId); m.intervalId = null; }
+    triggerEnvOff();
+    for (let i = 0; i < 16; i++) {
+      const cell = document.getElementById(`${id}-cell-${i}`);
+      if (cell) cell.classList.remove('current');
+    }
+  }
+}
+
+function seqRestart(id) {
+  const m = mods[id]; if (!m || !m.on) return;
+  if (m.intervalId) clearInterval(m.intervalId);
+  const intervalMs = (60 / m.rate) * 1000;
+  m.intervalId = setInterval(() => seqTick(id), intervalMs);
+}
+
+function seqTick(id) {
+  const m = mods[id]; if (!m || !m.on) return;
+  const N = m.activeSteps;
+
+  if (m.direction === 'fwd') {
+    m.step = (m.step + 1) % N;
+  } else if (m.direction === 'back') {
+    m.step = (m.step - 1 + N) % N;
+  } else if (m.direction === 'updown') {
+    m.step += m.stepDir;
+    if (m.step >= N - 1) { m.step = N - 1; m.stepDir = -1; }
+    else if (m.step <= 0)  { m.step = 0;     m.stepDir =  1; }
+  } else {
+    m.step = Math.floor(Math.random() * N);
+  }
+
+  for (let i = 0; i < 16; i++) {
+    const cell = document.getElementById(`${id}-cell-${i}`);
+    if (cell) cell.classList.toggle('current', i === m.step);
+  }
+
+  m.modSrc.offset.value = m.step / Math.max(N - 1, 1);
+
+  const stepData = m.seq[m.step];
+  if (stepData.active) {
+    setAllOscFreq(stepData.pitch);
+    triggerEnvOn();
+    const stepDurMs = (60 / m.rate) * 1000;
+    const gateDurMs = stepDurMs * m.gate;
+    setTimeout(() => triggerEnvOff(), gateDurMs);
+  }
+}
+
 // ---- Dragging + long-press ----
 const LONG_PRESS_MS = 600;
 const LONG_PRESS_MOVE = 8;
@@ -1455,6 +1668,9 @@ function setAllOscFreq(midi) {
 function noteOn(midi) {
   if (AC.state === 'suspended') AC.resume();
 
+  // Sequencer running: keyboard ignored (sequencer drives pitch + env)
+  if (Object.values(mods).some(m => m.type === 'sequencer' && m.on)) return;
+
   // ARP overrides everything (it manages its own pitch driving)
   const arpActive = Object.values(mods).some(m => m.type === 'arp' && m.on);
   if (arpActive) {
@@ -1492,6 +1708,7 @@ function noteOn(midi) {
 }
 
 function noteOff(midi) {
+  if (Object.values(mods).some(m => m.type === 'sequencer' && m.on)) return;
   if (Object.values(mods).some(m => m.type === 'drone' && m.on)) return;
 
   const arpActive = Object.values(mods).some(m => m.type === 'arp' && m.on);
