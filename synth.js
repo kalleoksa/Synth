@@ -430,6 +430,121 @@ function addOutput(x, y) {
     </div>`, x, y, 'output-mod');
 }
 
+// ---- Stereo Output module ----
+function addStereoOutput(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+
+  const merger = AC.createChannelMerger(2);
+  const master = AC.createGain();
+  master.gain.value = 0.7;
+
+  const leftIn  = AC.createGain();
+  const rightIn = AC.createGain();
+  leftIn .connect(merger, 0, 0);
+  rightIn.connect(merger, 0, 1);
+  merger.connect(master);
+  master.connect(AC.destination);
+
+  const desc = {
+    type: 'stereo-output', merger, master, leftIn, rightIn,
+    inputs: { 'in-l': leftIn, 'in-r': rightIn },
+    audioIn: null, audioOut: null, modIn: null, rateModIn: null, modOut: null
+  };
+
+  spawnModule(id, desc, `
+    <div class="mod-title">Stereo Out</div>
+    <div class="mod-knob">
+      <label>volume</label>
+      <input type="range" min="0" max="1" value="0.7" step="0.01"
+        oninput="mods['${id}'].master.gain.value=+this.value;this.nextElementSibling.textContent=Math.round(this.value*100)+'%'">
+      <span>70%</span>
+    </div>
+    <div class="ports">
+      <div class="port-col">
+        ${portH(id, 'in-l', 'in', 'L')}
+        ${portH(id, 'in-r', 'in', 'R')}
+      </div>
+    </div>`, x, y, 'stereo-output-mod');
+}
+
+// ---- Stereo VCA module ----
+// Two GainNodes (L + R) with three CV-routing modes:
+//   ENV   — both gains driven by cv-l (single shared envelope)
+//   DRONE — both gains pinned to 1, CV ignored (always open)
+//   SPLIT — cv-l drives gain L, cv-r drives gain R (independent envelopes)
+function addVca(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+
+  const gainL = AC.createGain();
+  const gainR = AC.createGain();
+  gainL.gain.value = 0;
+  gainR.gain.value = 0;
+
+  const cvFanL = AC.createGain();
+  const cvFanR = AC.createGain();
+  cvFanL.gain.value = 1;
+  cvFanR.gain.value = 1;
+
+  const desc = {
+    type: 'vca', gainL, gainR, cvFanL, cvFanR,
+    mode: 'env',
+    inputs:  { 'in-l': gainL, 'in-r': gainR, 'cv-l': cvFanL, 'cv-r': cvFanR },
+    outputs: { 'out-l': gainL, 'out-r': gainR },
+    audioIn: null, audioOut: null, modIn: null, rateModIn: null, modOut: null
+  };
+
+  desc.applyMode = function () {
+    try { cvFanL.disconnect(); } catch (e) {}
+    try { cvFanR.disconnect(); } catch (e) {}
+
+    if (desc.mode === 'env') {
+      gainL.gain.value = 0;
+      gainR.gain.value = 0;
+      cvFanL.connect(gainL.gain);
+      cvFanL.connect(gainR.gain);
+    } else if (desc.mode === 'split') {
+      gainL.gain.value = 0;
+      gainR.gain.value = 0;
+      cvFanL.connect(gainL.gain);
+      cvFanR.connect(gainR.gain);
+    } else { // drone
+      gainL.gain.value = 1;
+      gainR.gain.value = 1;
+    }
+  };
+  desc.applyMode();
+
+  spawnModule(id, desc, `
+    <div class="mod-title">Stereo VCA</div>
+    <div class="wave-row" id="${id}-mode">
+      <button class="wave-btn active" onclick="setVcaMode('${id}','env',this)">ENV</button>
+      <button class="wave-btn" onclick="setVcaMode('${id}','drone',this)">DRN</button>
+      <button class="wave-btn" onclick="setVcaMode('${id}','split',this)">SPL</button>
+    </div>
+    <div class="ports">
+      <div class="port-col">
+        ${portH(id, 'in-l', 'in', 'in L')}
+        ${portH(id, 'in-r', 'in', 'in R')}
+        ${portH(id, 'cv-l', 'in', 'cv L')}
+        ${portH(id, 'cv-r', 'in', 'cv R')}
+      </div>
+      <div class="port-col outputs">
+        ${portH(id, 'out-l', 'out', 'L')}
+        ${portH(id, 'out-r', 'out', 'R')}
+      </div>
+    </div>`, x, y, 'vca-mod');
+}
+
+function setVcaMode(id, mode, btn) {
+  const m = mods[id];
+  m.mode = mode;
+  m.applyMode();
+  btn.closest('.wave-row').querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
 // ---- Dual Filter module (LP + HP, series / parallel / stereo) ----
 function addDualFilter(x, y) {
   const id = uid();
