@@ -468,6 +468,125 @@ function addStereoOutput(x, y) {
     </div>`, x, y, 'stereo-output-mod');
 }
 
+// ---- Stereo Delay module (stereo / ping-pong) ----
+function addDelay(x, y) {
+  const id = uid();
+  x = x || rp(); y = y || rp(80);
+
+  const inL = AC.createGain();
+  const inR = AC.createGain();
+
+  const delayL = AC.createDelay(2.0);
+  const delayR = AC.createDelay(2.0);
+  delayL.delayTime.value = 0.3;
+  delayR.delayTime.value = 0.3;
+
+  const fbL = AC.createGain();
+  const fbR = AC.createGain();
+  fbL.gain.value = 0.4;
+  fbR.gain.value = 0.4;
+
+  const dryL = AC.createGain();
+  const dryR = AC.createGain();
+  const wetL = AC.createGain();
+  const wetR = AC.createGain();
+  dryL.gain.value = 0.7;
+  dryR.gain.value = 0.7;
+  wetL.gain.value = 0.3;
+  wetR.gain.value = 0.3;
+
+  const outL = AC.createGain();
+  const outR = AC.createGain();
+
+  // Persistent paths (mode-independent)
+  inL.connect(dryL); dryL.connect(outL);
+  inR.connect(dryR); dryR.connect(outR);
+  inL.connect(delayL);
+  inR.connect(delayR);
+  delayL.connect(wetL); wetL.connect(outL);
+  delayR.connect(wetR); wetR.connect(outR);
+  delayL.connect(fbL);
+  delayR.connect(fbR);
+
+  // Time CV fan-out
+  const timeFanOut = AC.createGain();
+  timeFanOut.gain.value = 1;
+  timeFanOut.connect(delayL.delayTime);
+  timeFanOut.connect(delayR.delayTime);
+
+  const desc = {
+    type: 'delay',
+    inL, inR, delayL, delayR, fbL, fbR, dryL, dryR, wetL, wetR, outL, outR, timeFanOut,
+    mode: 'stereo',
+    inputs:  { 'in-l': inL, 'in-r': inR, 'time-mod': timeFanOut },
+    outputs: { 'out-l': outL, 'out-r': outR },
+    audioIn: null, audioOut: null, modIn: null, rateModIn: null, modOut: null
+  };
+
+  desc.applyMode = function () {
+    try { fbL.disconnect(); } catch (e) {}
+    try { fbR.disconnect(); } catch (e) {}
+    if (desc.mode === 'stereo') {
+      fbL.connect(delayL);
+      fbR.connect(delayR);
+    } else { // ping-pong: cross feedback
+      fbL.connect(delayR);
+      fbR.connect(delayL);
+    }
+  };
+  desc.applyMode();
+
+  desc.applyMix = function (mix) {
+    const dry = 1 - mix;
+    dryL.gain.value = dry; dryR.gain.value = dry;
+    wetL.gain.value = mix; wetR.gain.value = mix;
+  };
+
+  spawnModule(id, desc, `
+    <div class="mod-title">Stereo Delay</div>
+    <div class="wave-row" id="${id}-mode">
+      <button class="wave-btn active" onclick="setDelayMode('${id}','stereo',this)">STE</button>
+      <button class="wave-btn" onclick="setDelayMode('${id}','pingpong',this)">PNG</button>
+    </div>
+    <div class="mod-knob">
+      <label>time</label>
+      <input type="range" min="0.035" max="0.78" value="0.3" step="0.001"
+        oninput="mods['${id}'].delayL.delayTime.value=+this.value;mods['${id}'].delayR.delayTime.value=+this.value;this.nextElementSibling.textContent=Math.round(+this.value*1000)+'ms'">
+      <span>300ms</span>
+    </div>
+    <div class="mod-knob">
+      <label>feedback</label>
+      <input type="range" min="0" max="0.95" value="0.4" step="0.01"
+        oninput="mods['${id}'].fbL.gain.value=+this.value;mods['${id}'].fbR.gain.value=+this.value;this.nextElementSibling.textContent=Math.round(+this.value*100)+'%'">
+      <span>40%</span>
+    </div>
+    <div class="mod-knob">
+      <label>mix</label>
+      <input type="range" min="0" max="1" value="0.3" step="0.01"
+        oninput="mods['${id}'].applyMix(+this.value);this.nextElementSibling.textContent=Math.round(+this.value*100)+'%'">
+      <span>30%</span>
+    </div>
+    <div class="ports">
+      <div class="port-col">
+        ${portH(id, 'in-l', 'in', 'in L')}
+        ${portH(id, 'in-r', 'in', 'in R')}
+        ${portH(id, 'time-mod', 'in', 'time')}
+      </div>
+      <div class="port-col outputs">
+        ${portH(id, 'out-l', 'out', 'L')}
+        ${portH(id, 'out-r', 'out', 'R')}
+      </div>
+    </div>`, x, y, 'delay-mod');
+}
+
+function setDelayMode(id, mode, btn) {
+  const m = mods[id];
+  m.mode = mode;
+  m.applyMode();
+  btn.closest('.wave-row').querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
 // ---- Stereo VCA module ----
 // Two GainNodes (L + R) with three CV-routing modes:
 //   ENV   — both gains driven by cv-l (single shared envelope)

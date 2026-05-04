@@ -94,6 +94,7 @@ body {
 .module.dualfilter-mod { border-color: #2E8B8B; min-width: 150px; }
 .module.vca-mod { border-color: #6B8E23; }
 .module.stereo-output-mod { border-color: #3B6D11; }
+.module.delay-mod { border-color: #4682B4; }
 
 .env-indicator {
   height: 28px;
