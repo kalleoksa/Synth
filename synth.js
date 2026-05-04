@@ -257,6 +257,7 @@ function addOsc(x, y) {
       <div class="port-col">${portH(id, 'mod', 'in', 'mod')}</div>
       <div class="port-col outputs">${portH(id, 'out', 'out', 'out')}</div>
     </div>`, x, y);
+  return id;
 }
 
 function refreshOscFreq(id) {
@@ -300,6 +301,7 @@ function addFilter(x, y) {
       </div>
       <div class="port-col outputs">${portH(id, 'out', 'out', 'out')}</div>
     </div>`, x, y);
+  return id;
 }
 
 // ---- LFO module ----
@@ -341,6 +343,7 @@ function addLfo(x, y) {
       <div class="port-col">${portH(id, 'rate-mod', 'in', 'rate')}</div>
       <div class="port-col outputs">${portH(id, 'out', 'out', 'out')}</div>
     </div>`, x, y);
+  return id;
 }
 
 // ---- ARP module ----
@@ -410,6 +413,7 @@ function addArp(x, y) {
         ${portH(id, 'mod-out', 'out', 'mod cv')}
       </div>
     </div>`, x, y, 'arp-mod');
+  return id;
 }
 
 // ---- Output module ----
@@ -434,6 +438,7 @@ function addOutput(x, y) {
     <div class="ports">
       <div class="port-col">${portH(id, 'in', 'in', 'in')}</div>
     </div>`, x, y, 'output-mod');
+  return id;
 }
 
 // ---- Stereo Output module ----
@@ -472,6 +477,7 @@ function addStereoOutput(x, y) {
         ${portH(id, 'in-r', 'in', 'R')}
       </div>
     </div>`, x, y, 'stereo-output-mod');
+  return id;
 }
 
 // ---- LFO 2 module (triangle + square outputs) ----
@@ -530,6 +536,7 @@ function addLfo2(x, y) {
         ${portH(id, 'sq-out', 'out', 'sq')}
       </div>
     </div>`, x, y, 'lfo2-mod');
+  return id;
 }
 
 // ---- Bipolar Attenuator module (3 channels, gain -1..+1) ----
@@ -579,6 +586,7 @@ function addAttenuator(x, y) {
       <div class="port-col">${portsLeft}</div>
       <div class="port-col outputs">${portsRight}</div>
     </div>`, x, y, 'attenuator-mod');
+  return id;
 }
 
 // ---- Multiple module (passive 1->4 splitter) ----
@@ -606,6 +614,7 @@ function addMultiple(x, y) {
       <div class="port-col">${portH(id, 'in', 'in', 'in')}</div>
       <div class="port-col outputs">${portsRight}</div>
     </div>`, x, y, 'multiple-mod');
+  return id;
 }
 
 // ---- Voice Router (paraphony) ----
@@ -693,6 +702,7 @@ function addVoiceRouter(x, y) {
       duo: slots 1–2 → v1, 3–4 → v2
     </div>
   `, x, y, 'voice-router-mod');
+  return id;
 }
 
 function setVrMode(id, mode, btn) {
@@ -821,6 +831,7 @@ function addDelay(x, y) {
         ${portH(id, 'out-r', 'out', 'R')}
       </div>
     </div>`, x, y, 'delay-mod');
+  return id;
 }
 
 function setDelayMode(id, mode, btn) {
@@ -898,6 +909,7 @@ function addVca(x, y) {
         ${portH(id, 'out-r', 'out', 'R')}
       </div>
     </div>`, x, y, 'vca-mod');
+  return id;
 }
 
 function setVcaMode(id, mode, btn) {
@@ -1025,6 +1037,7 @@ function addDualFilter(x, y) {
         ${portH(id, 'out', 'out', 'mix')}
       </div>
     </div>`, x, y, 'dualfilter-mod');
+  return id;
 }
 
 function setFilterMode(id, mode, btn) {
@@ -1071,6 +1084,7 @@ function addNoise(x, y) {
     <div class="ports">
       <div class="port-col outputs">${portH(id, 'out', 'out', 'out')}</div>
     </div>`, x, y, 'noise-mod');
+  return id;
 }
 
 // ---- Mixer module (CP3-style) ----
@@ -1141,6 +1155,7 @@ function addMixer(x, y) {
       <div class="port-col">${portsCol}</div>
       <div class="port-col outputs">${portH(id, 'out', 'out', 'out')}</div>
     </div>`, x, y, 'mixer-mod');
+  return id;
 }
 
 // ---- Wave buttons ----
@@ -1313,6 +1328,7 @@ function addSequencer(x, y) {
     const cell = document.getElementById(`${id}-cell-${i}`);
     if (cell) attachStepHandlers(cell, id, i);
   }
+  return id;
 }
 
 function attachStepHandlers(cellEl, id, stepIdx) {
@@ -1581,6 +1597,7 @@ function addEnv(x, y) {
       <div class="port-col outputs">${portH(id, 'out', 'out', 'out')}</div>
     </div>`, x, y, 'env-mod');
   setTimeout(() => drawEnvShape(id), 50);
+  return id;
 }
 
 function drawEnvShape(id) {
@@ -1637,6 +1654,7 @@ function addDrone(x, y) {
     <div class="drone-notes" id="${id}-notes">—</div>
     <div style="font-size:9px;color:#555;margin-top:4px;">hold notes → toggle off to release</div>
   `, x, y, 'drone-mod');
+  return id;
 }
 
 function toggleDrone(id, on) {
@@ -1889,15 +1907,108 @@ function buildPiano() {
   piano.appendChild(bk);
 }
 
-// ---- Init ----
+// ---- Programmatic patching ----
+function patch(fromId, fromPort, toId, toPort) {
+  const color = COLORS[colorIdx++ % COLORS.length];
+  cables.push({ fromId, fromPort, toId, toPort, color });
+  connectPair(fromId, fromPort, toId, toPort);
+  const fromMod = mods[fromId], toMod = mods[toId];
+  if (fromMod) {
+    const dot = fromMod.el.querySelector(`.port-dot[data-port="${fromPort}"][data-dir="out"]`);
+    if (dot) dot.classList.add('connected');
+  }
+  if (toMod) {
+    const dot = toMod.el.querySelector(`.port-dot[data-port="${toPort}"][data-dir="in"]`);
+    if (dot) dot.classList.add('connected');
+  }
+}
+
+// ---- Init: Moog Matriarch default state ----
 applyView();
 initCanvasGestures();
 buildPiano();
-addOsc(20, 20);
-addOsc(170, 20);
-addFilter(320, 20);
-addEnv(470, 20);
-addOutput(630, 20);
-addLfo(20, 290);
-addArp(170, 290);
-addDrone(400, 310);
+
+// Signal flow row (top)
+const osc1 = addOsc(20,   20);
+const osc2 = addOsc(190,  20);
+const osc3 = addOsc(360,  20);
+const osc4 = addOsc(530,  20);
+const noise = addNoise(700, 20);
+const mixer = addMixer(860, 20);
+const dfilt = addDualFilter(1030, 20);
+const vca   = addVca(1200, 20);
+const delay = addDelay(1370, 20);
+const stout = addStereoOutput(1540, 20);
+
+// Envelopes paired with VCA (just below it)
+const env1 = addEnv(1100, 440);
+const env2 = addEnv(1280, 440);
+
+// Modulation row (middle-left)
+const lfo1 = addLfo(20,  440);
+const lfo2 = addLfo2(190, 440);
+const arp  = addArp(360, 440);
+const drone = addDrone(530, 440);
+const vrout = addVoiceRouter(700, 440);
+
+// Sequencer + utilities row (bottom)
+const seq  = addSequencer(20,  860);
+const atten = addAttenuator(520, 860);
+const mult  = addMultiple(700,  860);
+
+// Legacy mono modules tucked at the right of utility row
+const mono_filter = addFilter(870,  860);
+const mono_out    = addOutput(1040, 860);
+
+// Spread OSC voice slots (1, 2, 3, 4) so QUAD voice routing splits them naturally
+mods[osc1].voiceSlot = 1;
+mods[osc2].voiceSlot = 2;
+mods[osc3].voiceSlot = 3;
+mods[osc4].voiceSlot = 4;
+[osc2, osc3, osc4].forEach((id, i) => {
+  const row = mods[id].el.querySelectorAll('.wave-row')[1];
+  if (!row) return;
+  row.querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
+  const btn = row.querySelectorAll('.wave-btn')[i + 1];
+  if (btn) btn.classList.add('active');
+});
+
+// Switch VCA to SPL so each EG drives its own channel
+mods[vca].mode = 'split';
+mods[vca].applyMode();
+const vcaModeRow = document.getElementById(vca + '-mode');
+if (vcaModeRow) {
+  vcaModeRow.querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
+  vcaModeRow.querySelectorAll('.wave-btn')[2].classList.add('active');
+}
+
+// Default Matriarch signal patches (after a tick so the DOM has port-dots)
+setTimeout(() => {
+  // Sources -> Mixer
+  patch(osc1,  'out', mixer, 'in-1');
+  patch(osc2,  'out', mixer, 'in-2');
+  patch(osc3,  'out', mixer, 'in-3');
+  patch(osc4,  'out', mixer, 'in-4');
+  patch(noise, 'out', mixer, 'in-5');
+
+  // Mixer -> Dual Filter
+  patch(mixer, 'out', dfilt, 'in');
+
+  // Filter -> Stereo VCA (mono mix sent to both channels)
+  patch(dfilt, 'out', vca, 'in-l');
+  patch(dfilt, 'out', vca, 'in-r');
+
+  // Envs -> VCA CVs
+  patch(env1, 'out', vca, 'cv-l');
+  patch(env2, 'out', vca, 'cv-r');
+
+  // VCA -> Delay (stereo)
+  patch(vca,   'out-l', delay, 'in-l');
+  patch(vca,   'out-r', delay, 'in-r');
+
+  // Delay -> Stereo Out
+  patch(delay, 'out-l', stout, 'in-l');
+  patch(delay, 'out-r', stout, 'in-r');
+
+  redrawCables();
+}, 0);
