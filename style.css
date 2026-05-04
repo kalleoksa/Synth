@@ -91,6 +91,7 @@ body {
 .module.drone-mod  { border-color: #BA7517; }
 .module.noise-mod  { border-color: #888; }
 .module.mixer-mod  { border-color: #C44767; min-width: 150px; }
+.module.dualfilter-mod { border-color: #2E8B8B; min-width: 150px; }
 
 .env-indicator {
   height: 28px;
